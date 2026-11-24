@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-const currentVersion = "2026.11.24.2"
+const currentVersion = "2026.11.24.3"
 const maxUpdateSize = 256 << 20
 
 type updatePackage struct {

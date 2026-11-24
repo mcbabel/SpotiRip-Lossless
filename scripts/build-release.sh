@@ -27,12 +27,25 @@ rm -rf -- "$stage" "$archive" "$archive.sha256"
 mkdir -p "$stage"
 
 executable=spotirip-lossless
-ldflags='-s -w'
+ldflags='-s -w -linkmode=external'
 if [[ $target_os == windows ]]; then
     executable+=.exe
-    ldflags+=' -linkmode=external'
+else
+    ldflags+=' -extld=gcc'
 fi
-go build -trimpath -ldflags="$ldflags" -o "$stage/$executable" ./cmd/spotirip-lossless
+go build -tags=nodsp -trimpath -ldflags="$ldflags" -o "$stage/$executable" ./cmd/spotirip-lossless
+if [[ $target_os == linux ]]; then
+    python3 - "$stage/$executable" <<'PY'
+import subprocess
+import sys
+
+linked = subprocess.check_output(["ldd", sys.argv[1]], text=True)
+forbidden = [name for name in ["libFLAC", "libmpg123", "libasound", "libvorbis", "libogg", "libstdc++", "libgcc_s"] if name in linked]
+if forbidden:
+    raise SystemExit("Unexpected release dependencies: " + ", ".join(forbidden) + "\n" + linked)
+print("Linux release has no native playback or C++ runtime dependencies")
+PY
+fi
 cp README.md THIRD_PARTY.md LICENSE NOTICE "$stage/"
 cp -R licenses "$stage/"
 mkdir -p "$stage/docs"

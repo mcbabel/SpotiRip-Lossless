@@ -1,4 +1,4 @@
-# SpotiRip Lossless 2026.11.24.2
+# SpotiRip Lossless 2026.11.24.3
 
 SpotiRip Lossless is a command-line downloader for Spotify audio and music videos on Linux and Windows, using your own Spotify Premium account.
 
@@ -14,6 +14,7 @@ SpotiRip Lossless is a command-line downloader for Spotify audio and music video
 - Albums, artists, playlists, link lists, metadata, cover art, retries, and HTTP Range audio resume
 - Optional lyrics, subtitles, and full output verification with FFprobe and FFmpeg
 - SHA-256-verified self-updates with an integrated self-test and rollback
+- Portable Linux release without native playback-library or C++ runtime version conflicts
 
 ## Requirements
 
@@ -21,7 +22,7 @@ SpotiRip Lossless is a command-line downloader for Spotify audio and music video
 - A Spotify Premium account
 - FFmpeg and FFprobe on `PATH` for video processing, most metadata operations, duplicate detection, and `--verify`
 - A user-supplied Widevine L3 WVD device file for music videos
-- Linux system libraries listed in the README; the Windows executable includes its MinGW/C++ runtime
+- No additional native playback or C++ runtime libraries for release executables
 
 ## Installation
 

@@ -2,6 +2,14 @@
 
 All notable changes are documented here. Versions use numeric dotted identifiers and release tags use the same value prefixed with `v`.
 
+## 2026.11.24.3
+
+### Changed
+
+- Exclude unused playback decoders and their native library dependencies from release builds with the `nodsp` build tag
+- Statically link the Linux C++ runtime and validate release dependencies with `ldd`
+- Remove native playback-library and C++ runtime version conflicts from Linux release executables
+
 ## 2026.11.24.2
 
 ### Changed

@@ -3,7 +3,7 @@ package native
 /*
 #cgo CFLAGS: -O3 -I${SRCDIR}
 #cgo CXXFLAGS: -O3 -std=c++17 -I${SRCDIR}
-#cgo !windows LDFLAGS: -lstdc++ -lm
+#cgo !windows LDFLAGS: -static-libgcc -Wl,-Bstatic -lstdc++ -Wl,-Bdynamic -lm
 #cgo windows LDFLAGS: -static-libgcc -Wl,-Bstatic -lstdc++ -lwinpthread -Wl,-Bdynamic -lm
 #include "pcode_runtime.h"
 */

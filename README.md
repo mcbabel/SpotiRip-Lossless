@@ -24,18 +24,18 @@ Protocol and cipher resources are embedded in the executable. The application do
 - Linux x86-64 or Windows x86-64
 - A Spotify Premium account
 - `ffmpeg` and `ffprobe` available on `PATH` for video processing, most metadata operations, duplicate detection, and `--verify`
-- Linux system libraries: `libstdc++`, `libmpg123`, `libFLAC`, `libasound`, `libvorbis`, and `libogg`
+- No additional native playback or C++ runtime libraries for release executables
 - A user-supplied Widevine L3 `.wvd` device file for music videos
 
-The Windows executable statically includes its MinGW/C++ runtime; no MinGW installation is needed to run it.
+No MinGW installation is needed to run the Windows executable.
 
 ### Build
 
 - Go 1.27 or newer
-- C and C++17 compilers with CGo enabled
-- The Linux development packages listed above, or MinGW-w64 for Windows builds
+- C and C++17 compilers with CGo enabled and static C++ runtime support
+- MinGW-w64 only for Windows cross-builds
 
-Python is not required to use the downloader. It is only used to collect third-party license notices during a release build.
+Python is not required to use the downloader. It is only used for license collection and validation during a release build.
 
 ## Install
 
@@ -186,8 +186,8 @@ The updater verifies the archive size and SHA-256, runs the new executable's sel
 ## Build from source
 
 ```bash
-go test ./cmd/... ./internal/...
-go build -o bin/spotirip-lossless ./cmd/spotirip-lossless
+go test -tags=nodsp ./cmd/... ./internal/...
+go build -tags=nodsp -o bin/spotirip-lossless ./cmd/spotirip-lossless
 ```
 
 To build the Windows executable from Linux with MinGW-w64:
