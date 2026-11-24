@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	metadatapb "github.com/devgianlu/go-librespot/proto/spotify/metadata"
 	"github.com/devgianlu/go-librespot/spclient"
@@ -168,16 +170,16 @@ func acquireWidevineKeys(ctx context.Context, sp *spclient.Spclient, info videoE
 	}
 	psshData, err := base64.StdEncoding.DecodeString(info.EncryptionData)
 	if err != nil {
-		return nil, fmt.Errorf("Widevine-PSSH: %w", err)
+		return nil, fmt.Errorf("Widevine PSSH: %w", err)
 	}
 	pssh, err := widevine.NewPSSH(psshData)
 	if err != nil {
-		return nil, fmt.Errorf("Widevine-PSSH: %w", err)
+		return nil, fmt.Errorf("Widevine PSSH: %w", err)
 	}
 	cdm := widevine.NewCDM(device)
 	challenge, parseLicense, err := cdm.GetLicenseChallenge(pssh, widevinepb.LicenseType_AUTOMATIC, false)
 	if err != nil {
-		return nil, fmt.Errorf("Widevine-Challenge: %w", err)
+		return nil, fmt.Errorf("Widevine challenge: %w", err)
 	}
 	response, err := sp.Request(ctx, http.MethodPost, info.LicenseServerEndpoint, nil, http.Header{
 		"Content-Type": []string{"application/octet-stream"},
@@ -193,11 +195,11 @@ func acquireWidevineKeys(ctx context.Context, sp *spclient.Spclient, info videoE
 		return nil, err
 	}
 	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Widevine-Lizenz: HTTP %d", response.StatusCode)
+		return nil, fmt.Errorf("Widevine license: HTTP %d", response.StatusCode)
 	}
 	keys, err := parseLicense(body)
 	if err != nil {
-		return nil, fmt.Errorf("Widevine-Lizenz: %w", err)
+		return nil, fmt.Errorf("Widevine license: %w", err)
 	}
 	if len(keys) == 0 {
 		return nil, fmt.Errorf("Widevine license contains no content key")
@@ -254,7 +256,68 @@ func fetchSegment(ctx context.Context, client *http.Client, manifest *videoManif
 	return fmt.Errorf("could not download segment: %w", lastErr)
 }
 
-func downloadProfile(ctx context.Context, client *http.Client, manifest *videoManifest, profile videoProfile, path string) error {
+type segmentDownload struct {
+	template  string
+	timestamp *int64
+	path      string
+}
+
+func downloadSegmentToFile(ctx context.Context, client *http.Client, manifest *videoManifest, profile videoProfile, item segmentDownload) error {
+	if info, err := os.Stat(item.path); err == nil && info.Size() > 0 {
+		return nil
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	temporary := item.path + ".tmp"
+	output, err := os.OpenFile(temporary, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(temporary)
+	if err := fetchSegment(ctx, client, manifest, item.template, profile, item.timestamp, output); err != nil {
+		output.Close()
+		return err
+	}
+	if err := output.Sync(); err != nil {
+		output.Close()
+		return err
+	}
+	if err := output.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temporary, item.path)
+}
+
+func assembleSegments(path string, items []segmentDownload) error {
+	output, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	for _, item := range items {
+		input, err := os.Open(item.path)
+		if err != nil {
+			output.Close()
+			return err
+		}
+		_, copyErr := io.Copy(output, input)
+		closeErr := input.Close()
+		if copyErr != nil {
+			output.Close()
+			return copyErr
+		}
+		if closeErr != nil {
+			output.Close()
+			return closeErr
+		}
+	}
+	if err := output.Sync(); err != nil {
+		output.Close()
+		return err
+	}
+	return output.Close()
+}
+
+func downloadProfile(ctx context.Context, client *http.Client, manifest *videoManifest, profile videoProfile, path string, progressMu *sync.Mutex) error {
 	content, err := manifest.content()
 	if err != nil {
 		return err
@@ -266,27 +329,72 @@ func downloadProfile(ctx context.Context, client *http.Client, manifest *videoMa
 	if err != nil {
 		return err
 	}
-	output, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-	if err != nil {
+	segmentDir := fmt.Sprintf("%s.%d-%d.segments", path, profile.ID, content.SegmentLength)
+	if err := os.MkdirAll(segmentDir, 0o700); err != nil {
 		return err
 	}
-	defer output.Close()
-	if err := fetchSegment(ctx, client, manifest, manifest.InitializationTemplate, profile, nil, output); err != nil {
-		return fmt.Errorf("Initialisierungssegment: %w", err)
-	}
+	items := []segmentDownload{{
+		template: manifest.InitializationTemplate,
+		path:     filepath.Join(segmentDir, "init.seg"),
+	}}
 	stepMillis := content.SegmentLength * 1000
 	count := (duration + stepMillis - 1) / stepMillis
 	for index := int64(0); index < count; index++ {
 		timestamp := index * content.SegmentLength
-		if err := fetchSegment(ctx, client, manifest, manifest.SegmentTemplate, profile, &timestamp, output); err != nil {
-			return fmt.Errorf("Segment %d/%d: %w", index+1, count, err)
-		}
-		if index%10 == 0 || index+1 == count {
-			fmt.Printf("\r  %s %d%%", profile.MimeType, (index+1)*100/count)
-		}
+		items = append(items, segmentDownload{
+			template:  manifest.SegmentTemplate,
+			timestamp: &timestamp,
+			path:      filepath.Join(segmentDir, fmt.Sprintf("%08d.seg", index)),
+		})
 	}
+	jobs := make(chan segmentDownload, len(items))
+	for _, item := range items {
+		jobs <- item
+	}
+	close(jobs)
+	workerCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	errorsCh := make(chan error, 1)
+	var workers sync.WaitGroup
+	workers.Add(min(4, len(items)))
+	completed := 0
+	for range min(4, len(items)) {
+		go func() {
+			defer workers.Done()
+			for item := range jobs {
+				if workerCtx.Err() != nil {
+					return
+				}
+				if err := downloadSegmentToFile(workerCtx, client, manifest, profile, item); err != nil {
+					select {
+					case errorsCh <- err:
+					default:
+					}
+					cancel()
+					return
+				}
+				progressMu.Lock()
+				completed++
+				if completed%10 == 0 || completed == len(items) {
+					fmt.Printf("\r  %s %d%%", profile.MimeType, completed*100/len(items))
+				}
+				progressMu.Unlock()
+			}
+		}()
+	}
+	workers.Wait()
+	select {
+	case err := <-errorsCh:
+		return err
+	default:
+	}
+	progressMu.Lock()
 	fmt.Println()
-	return output.Sync()
+	progressMu.Unlock()
+	if err := assembleSegments(path, items); err != nil {
+		return err
+	}
+	return os.RemoveAll(segmentDir)
 }
 
 func decryptMP4(inputPath, outputPath string, keys []*widevine.Key) error {
@@ -310,6 +418,18 @@ func decryptMP4(inputPath, outputPath string, keys []*widevine.Key) error {
 	return output.Close()
 }
 
+func runTwo(first, second func() error) error {
+	results := make(chan error, 2)
+	go func() { results <- first() }()
+	go func() { results <- second() }()
+	firstErr := <-results
+	secondErr := <-results
+	if firstErr != nil {
+		return firstErr
+	}
+	return secondErr
+}
+
 func downloadVideo(ctx context.Context, sp *spclient.Spclient, client *http.Client, track *metadatapb.Track, options cliOptions) error {
 	if len(track.OriginalVideo) == 0 || len(track.OriginalVideo[0].GetGid()) == 0 {
 		return fmt.Errorf("no music video is available for this track")
@@ -329,11 +449,11 @@ func downloadVideo(ctx context.Context, sp *spclient.Spclient, client *http.Clie
 		return err
 	}
 	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("Videomanifest: HTTP %d", response.StatusCode)
+		return fmt.Errorf("video manifest: HTTP %d", response.StatusCode)
 	}
 	var manifest videoManifest
 	if err := json.Unmarshal(manifestData, &manifest); err != nil {
-		return fmt.Errorf("Videomanifest: %w", err)
+		return fmt.Errorf("video manifest: %w", err)
 	}
 	video, audio, err := manifest.selectProfiles(options.videoQuality)
 	if err != nil {
@@ -376,52 +496,38 @@ func downloadVideo(ctx context.Context, sp *spclient.Spclient, client *http.Clie
 	}
 	downloadClient := *client
 	downloadClient.Timeout = 0
-	fmt.Println("Downloading video track ...")
-	if err := downloadProfile(ctx, &downloadClient, &manifest, video, videoEncrypted); err != nil {
+	fmt.Println("Downloading video and audio tracks ...")
+	var progressMu sync.Mutex
+	if err := runTwo(
+		func() error {
+			return downloadProfile(ctx, &downloadClient, &manifest, video, videoEncrypted, &progressMu)
+		},
+		func() error {
+			return downloadProfile(ctx, &downloadClient, &manifest, audio, audioEncrypted, &progressMu)
+		},
+	); err != nil {
 		return err
 	}
-	fmt.Println("Downloading audio track ...")
-	if err := downloadProfile(ctx, &downloadClient, &manifest, audio, audioEncrypted); err != nil {
-		return err
-	}
-	if err := decryptMP4(videoEncrypted, videoDecrypted, keys); err != nil {
-		return err
-	}
-	if err := decryptMP4(audioEncrypted, audioDecrypted, keys); err != nil {
+	if err := runTwo(
+		func() error { return decryptMP4(videoEncrypted, videoDecrypted, keys) },
+		func() error { return decryptMP4(audioEncrypted, audioDecrypted, keys) },
+	); err != nil {
 		return err
 	}
 	ffmpeg, err := exec.LookPath("ffmpeg")
 	if err != nil {
 		return fmt.Errorf("ffmpeg is required to mux the video file: %w", err)
 	}
-	arguments := []string{
-		"-y", "-loglevel", "error",
-		"-i", videoDecrypted, "-i", audioDecrypted,
-		"-map", "0:v:0", "-map", "1:a:0", "-c", "copy", "-movflags", "+faststart",
+	cover, err := downloadCover(ctx, client, track, options.outputDir)
+	if err != nil {
+		fmt.Printf("Warning: could not download cover: %v\n", err)
+		cover = ""
 	}
-	for _, file := range subtitleFiles {
-		arguments = append(arguments, "-i", file.Path)
+	if cover != "" {
+		defer os.Remove(cover)
 	}
-	for i, file := range subtitleFiles {
-		arguments = append(arguments,
-			"-map", fmt.Sprintf("%d:s:0", i+2),
-			"-c:s", "mov_text",
-			fmt.Sprintf("-metadata:s:s:%d", i), "language="+file.Language,
-		)
-	}
-	arguments = append(arguments, "-f", "mp4", muxPart)
-	command := exec.CommandContext(ctx, ffmpeg, arguments...)
-	var commandOutput bytes.Buffer
-	command.Stdout = &commandOutput
-	command.Stderr = &commandOutput
-	if err := command.Run(); err != nil {
-		return fmt.Errorf("MP4-Muxing: %w: %s", err, strings.TrimSpace(commandOutput.String()))
-	}
-	if err := os.Rename(muxPart, outputPath); err != nil {
+	if err := muxVideo(ctx, ffmpeg, videoDecrypted, audioDecrypted, outputPath, subtitleFiles, cover, track, options.link); err != nil {
 		return err
-	}
-	if err := embedMetadata(ctx, client, track, options.link, outputPath, options.outputDir); err != nil {
-		fmt.Printf("Warning: could not embed video metadata/cover: %v\n", err)
 	}
 	if options.verify {
 		if err := verifyMedia(ctx, outputPath); err != nil {
@@ -431,4 +537,46 @@ func downloadVideo(ctx context.Context, sp *spclient.Spclient, client *http.Clie
 	}
 	fmt.Printf("Video completed: %s\n", outputPath)
 	return nil
+}
+
+func muxVideo(ctx context.Context, ffmpeg, videoDecrypted, audioDecrypted, outputPath string, subtitleFiles []subtitleFile, cover string, track *metadatapb.Track, link string) error {
+	muxPart := outputPath + ".part"
+	arguments := []string{
+		"-y", "-loglevel", "error",
+		"-i", videoDecrypted, "-i", audioDecrypted,
+	}
+	for _, file := range subtitleFiles {
+		arguments = append(arguments, "-i", file.Path)
+	}
+	coverInput := 0
+	if cover != "" {
+		coverInput = len(subtitleFiles) + 2
+		arguments = append(arguments, "-i", cover)
+	}
+	arguments = append(arguments,
+		"-map", "0:v:0", "-map", "1:a:0", "-map_metadata", "-1", "-c", "copy",
+	)
+	for i, file := range subtitleFiles {
+		arguments = append(arguments,
+			"-map", fmt.Sprintf("%d:s:0", i+2),
+			"-c:s", "mov_text",
+			fmt.Sprintf("-metadata:s:s:%d", i), "language="+file.Language,
+		)
+	}
+	if cover != "" {
+		arguments = append(arguments,
+			"-map", strconv.Itoa(coverInput),
+			"-disposition:v:1", "attached_pic", "-metadata:s:v:1", "title=Album cover",
+		)
+	}
+	arguments = append(arguments, metadataArguments(track, link)...)
+	arguments = append(arguments, "-movflags", "+faststart+use_metadata_tags", "-f", "mp4", muxPart)
+	command := exec.CommandContext(ctx, ffmpeg, arguments...)
+	var commandOutput bytes.Buffer
+	command.Stdout = &commandOutput
+	command.Stderr = &commandOutput
+	if err := command.Run(); err != nil {
+		return fmt.Errorf("MP4 muxing: %w: %s", err, strings.TrimSpace(commandOutput.String()))
+	}
+	return os.Rename(muxPart, outputPath)
 }

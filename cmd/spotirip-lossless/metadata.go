@@ -50,7 +50,7 @@ func ensureCoverMetadata(ctx context.Context, sp *spclient.Spclient, track *meta
 	albumID := librespot.SpotifyIdFromGid(librespot.SpotifyIdTypeAlbum, album.GetGid())
 	var details metadatapb.Album
 	if err := sp.ExtendedMetadataSimple(ctx, albumID, extmetadatapb.ExtensionKind_ALBUM_V4, &details); err != nil {
-		return fmt.Errorf("Album-Cover: %w", err)
+		return fmt.Errorf("album cover: %w", err)
 	}
 	album.Cover = details.Cover
 	album.CoverGroup = details.CoverGroup

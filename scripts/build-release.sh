@@ -37,6 +37,10 @@ cp README.md THIRD_PARTY.md LICENSE NOTICE "$stage/"
 cp -R licenses "$stage/"
 mkdir -p "$stage/docs"
 cp docs/METADATA.md docs/SELF_UPDATE.md docs/VIDEO.md "$stage/docs/"
+if [[ -f assets/demo.gif ]]; then
+    mkdir -p "$stage/assets"
+    cp assets/demo.gif "$stage/assets/"
+fi
 tar -C dist -czf "$archive" "$name"
 (
     cd dist

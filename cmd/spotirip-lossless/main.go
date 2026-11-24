@@ -26,6 +26,7 @@ import (
 	audiofilespb "github.com/devgianlu/go-librespot/proto/spotify/extendedmetadata/audiofiles"
 	metadatapb "github.com/devgianlu/go-librespot/proto/spotify/metadata"
 	streamingpb "github.com/devgianlu/go-librespot/proto/spotify/streaming"
+	"github.com/devgianlu/go-librespot/session"
 	"github.com/mcbabel/SpotiRip-Lossless/internal/spotifyclean"
 )
 
@@ -269,17 +270,12 @@ func safeNameForOS(value, goos string) string {
 	return value
 }
 
-func download(ctx context.Context, options cliOptions) error {
+func download(ctx context.Context, options cliOptions, sess *session.Session, client *http.Client) error {
 	trackID, err := parseTrack(options.link)
 	if err != nil {
 		return err
 	}
 	outputDir := options.outputDir
-	sess, client, err := openSession(ctx, options)
-	if err != nil {
-		return err
-	}
-	defer sess.Close()
 	sp := sess.Spclient()
 	var track metadatapb.Track
 	if err := sp.ExtendedMetadataSimple(ctx, *trackID, extmetadatapb.ExtensionKind_TRACK_V4, &track); err != nil {
@@ -295,7 +291,7 @@ func download(ctx context.Context, options cliOptions) error {
 	}
 	var audioFiles audiofilespb.AudioFilesExtensionResponse
 	if err := sp.ExtendedMetadataSimple(ctx, actualID, extmetadatapb.ExtensionKind_AUDIO_FILES, &audioFiles); err != nil {
-		return fmt.Errorf("Audioformate: %w", err)
+		return fmt.Errorf("audio formats: %w", err)
 	}
 	selected, err := chooseAudio(audioFiles.Files, options.selectFormat, options.audioQuality)
 	if err != nil {
@@ -310,7 +306,7 @@ func download(ctx context.Context, options cliOptions) error {
 	}
 	playPlayToken, err := hex.DecodeString(metadata.PlayPlayToken)
 	if err != nil {
-		return fmt.Errorf("PlayPlay-Token: %w", err)
+		return fmt.Errorf("PlayPlay token: %w", err)
 	}
 	sp.SetAppVersion(metadata.AppVersion)
 	license, err := sp.PlayPlayRequest(ctx, file.FileId, &streamingpb.PlayPlayLicenseRequest{
@@ -321,7 +317,7 @@ func download(ctx context.Context, options cliOptions) error {
 		Timestamp:     ptr(time.Now().Unix()),
 	})
 	if err != nil {
-		return fmt.Errorf("PlayPlay-Lizenz: %w", err)
+		return fmt.Errorf("PlayPlay license: %w", err)
 	}
 	engine, err := spotifyclean.New()
 	if err != nil {
@@ -549,7 +545,7 @@ func normalizeAudio(path string, format metadatapb.AudioFile_Format) error {
 		segments := int(data[offset+26])
 		headerSize := 27 + segments
 		if offset+headerSize > len(data) {
-			return fmt.Errorf("abgeschnittene OGG-Seite")
+			return fmt.Errorf("truncated OGG page")
 		}
 		payload := offset + headerSize
 		if payload+7 <= len(data) && data[payload] == 1 && string(data[payload+1:payload+7]) == "vorbis" {

@@ -34,7 +34,7 @@ func parseOggPages(data []byte) ([]oggPage, error) {
 		segmentCount := int(data[offset+26])
 		headerSize := 27 + segmentCount
 		if offset+headerSize > len(data) {
-			return nil, fmt.Errorf("abgeschnittene OGG-Seite")
+			return nil, fmt.Errorf("truncated OGG page")
 		}
 		segments := append([]byte(nil), data[offset+27:offset+headerSize]...)
 		payloadSize := 0
@@ -43,7 +43,7 @@ func parseOggPages(data []byte) ([]oggPage, error) {
 		}
 		payloadStart := offset + headerSize
 		if payloadStart+payloadSize > len(data) {
-			return nil, fmt.Errorf("abgeschnittene OGG-Daten")
+			return nil, fmt.Errorf("truncated OGG data")
 		}
 		pages = append(pages, oggPage{
 			flags: data[offset+5], granule: binary.LittleEndian.Uint64(data[offset+6:]),
@@ -96,14 +96,14 @@ func buildVorbisComment(original []byte, track *metadatapb.Track, link string, p
 	vendorStart := 11
 	commentCountOffset := vendorStart + int(vendorLength)
 	if commentCountOffset+4 > len(original) {
-		return nil, fmt.Errorf("abgeschnittener Vorbis-Vendor")
+		return nil, fmt.Errorf("truncated Vorbis vendor")
 	}
 	commentCount := binary.LittleEndian.Uint32(original[commentCountOffset:])
 	cursor := commentCountOffset + 4
 	comments := []string{}
 	for i := uint32(0); i < commentCount; i++ {
 		if cursor+4 > len(original) {
-			return nil, fmt.Errorf("abgeschnittener Vorbis-Kommentar")
+			return nil, fmt.Errorf("truncated Vorbis comment")
 		}
 		length := int(binary.LittleEndian.Uint32(original[cursor:]))
 		cursor += 4

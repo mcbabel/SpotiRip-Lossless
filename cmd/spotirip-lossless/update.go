@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-const currentVersion = "2026.11.24.1"
+const currentVersion = "2026.11.24.2"
 const maxUpdateSize = 256 << 20
 
 type updatePackage struct {
@@ -207,7 +207,7 @@ func performUpdate(ctx context.Context, run updateRun) (bool, error) {
 	packageURL := manifestAddress.ResolveReference(packageAddress).String()
 	archive, _, err := fetchUpdate(ctx, run.client, packageURL, maxUpdateSize)
 	if err != nil {
-		return false, fmt.Errorf("Update-Paket: %w", err)
+		return false, fmt.Errorf("update package: %w", err)
 	}
 	if platform.Size > 0 && int64(len(archive)) != platform.Size {
 		return false, fmt.Errorf("update size mismatch: got %d bytes, expected %d", len(archive), platform.Size)

@@ -64,7 +64,7 @@ The cover is added as a separate stream with `attached_pic`. The actual video st
 
 With `--subtitles`, the CLI substitutes the language placeholder in the subtitle template and tries all offered base URLs. Each language is downloaded completely, stored as `.vtt` next to the MP4, and embedded as `mov_text` with its language code. Temporary files prevent incomplete subtitles from appearing complete.
 
-If the manifest contains no language codes, no subtitle files are created and the media streams remain unchanged. The real test track did not provide subtitles, so retrieval of a nonempty language list has not been verified against Spotify.
+If the manifest contains no language codes, no subtitle files are created and the media streams remain unchanged. WebVTT download, language assignment, and `mov_text` embedding are covered by a local end-to-end test. The tested Spotify tracks did not expose subtitle language codes, so subtitle availability against Spotify remains catalog-dependent.
 
 ## Limitations
 

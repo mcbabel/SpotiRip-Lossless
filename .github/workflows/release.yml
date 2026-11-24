@@ -54,4 +54,4 @@ jobs:
           dist/spotirip-lossless-windows-amd64.tar.gz.sha256
           dist/update-manifest.json
           --title "SpotiRip Lossless ${{ github.ref_name }}"
-          --generate-notes
+          --notes-file RELEASE_NOTES.md

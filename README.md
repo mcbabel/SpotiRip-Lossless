@@ -4,6 +4,8 @@ SpotiRip Lossless is a command-line downloader for Spotify tracks and music vide
 
 Protocol and cipher resources are embedded in the executable. The application does not require a running Spotify client, a Spotify executable, Unicorn, Wine, or a graphical session.
 
+![SpotiRip Lossless terminal demo](assets/demo.gif)
+
 ## Features
 
 - FLAC lossless downloads, plus the best available OGG Vorbis or AAC alternative when FLAC is unavailable

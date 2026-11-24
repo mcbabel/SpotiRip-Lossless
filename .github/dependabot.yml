@@ -1,0 +1,46 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '07:00'
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 3
+    groups:
+      go-dependencies:
+        patterns: ['*']
+  - package-ecosystem: gomod
+    directory: /reference/go-librespot
+    schedule:
+      interval: weekly
+      day: monday
+      time: '07:00'
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 3
+    groups:
+      go-dependencies:
+        patterns: ['*']
+  - package-ecosystem: gomod
+    directory: /reference/gowidevine
+    schedule:
+      interval: weekly
+      day: monday
+      time: '07:00'
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 3
+    groups:
+      go-dependencies:
+        patterns: ['*']
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '07:00'
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 2
+    groups:
+      actions:
+        patterns: ['*']

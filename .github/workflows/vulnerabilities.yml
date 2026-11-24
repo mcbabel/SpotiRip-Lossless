@@ -1,0 +1,36 @@
+name: Vulnerability check
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'go.mod'
+      - 'go.sum'
+      - 'vendor/modules.txt'
+      - 'reference/**/go.mod'
+      - 'reference/**/go.sum'
+  pull_request:
+    paths:
+      - 'go.mod'
+      - 'go.sum'
+      - 'vendor/modules.txt'
+      - 'reference/**/go.mod'
+      - 'reference/**/go.sum'
+
+permissions:
+  contents: read
+
+jobs:
+  govulncheck:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.1.0
+        with:
+          go-version: '1.27.4'
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y build-essential libasound2-dev libflac-dev libmpg123-dev libogg-dev libvorbis-dev
+      - name: Run govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./cmd/... ./internal/...

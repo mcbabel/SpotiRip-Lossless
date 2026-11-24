@@ -131,10 +131,10 @@ func (r *Runtime) SetCipherState(state []byte) error {
 
 func (r *Runtime) SeekCipher(block uint64) ([]byte, error) {
 	if r == nil || r.ptr == nil {
-		return nil, r.failure("Cipher-Seek")
+		return nil, r.failure("cipher seek")
 	}
 	if C.clean_seek_cipher(r.ptr, C.uint64_t(block)) != 0 {
-		return nil, r.failure("Cipher-Seek")
+		return nil, r.failure("cipher seek")
 	}
 	return r.CipherState()
 }

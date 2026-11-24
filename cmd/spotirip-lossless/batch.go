@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
@@ -11,6 +12,7 @@ import (
 	librespot "github.com/devgianlu/go-librespot"
 	extmetadatapb "github.com/devgianlu/go-librespot/proto/spotify/extendedmetadata"
 	metadatapb "github.com/devgianlu/go-librespot/proto/spotify/metadata"
+	"github.com/devgianlu/go-librespot/session"
 )
 
 type batchResult struct {
@@ -214,10 +216,25 @@ func run(ctx context.Context, options cliOptions) error {
 	for i := 0; i < workers; i++ {
 		go func() {
 			defer workersWG.Done()
+			var sess *session.Session
+			var client *http.Client
+			var sessionErr error
+			defer func() {
+				if sess != nil {
+					sess.Close()
+				}
+			}()
 			for link := range jobs {
 				jobOptions := options
 				jobOptions.link = link
-				results <- batchResult{link: link, err: download(ctx, jobOptions)}
+				if sess == nil && sessionErr == nil {
+					sess, client, sessionErr = openSession(ctx, options)
+				}
+				if sessionErr != nil {
+					results <- batchResult{link: link, err: sessionErr}
+					continue
+				}
+				results <- batchResult{link: link, err: download(ctx, jobOptions, sess, client)}
 			}
 		}()
 	}

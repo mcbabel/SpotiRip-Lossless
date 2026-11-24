@@ -2,6 +2,24 @@
 
 All notable changes are documented here. Versions use numeric dotted identifiers and release tags use the same value prefixed with `v`.
 
+## 2026.11.24.2
+
+### Changed
+
+- Reuse authenticated sessions and HTTP clients for all tracks handled by the same batch worker
+- Download video and audio profiles and their segments concurrently with bounded workers
+- Preserve completed video segments for interrupted downloads and assemble them in order on resume
+- Decrypt video and audio tracks concurrently and embed metadata and cover art during the initial mux
+- Standardize first-party messages and tooling on English
+- Curate release notes and add a terminal demo
+
+### Added
+
+- Unit coverage for video segment ordering, failed downloads, and segment reuse
+- Local end-to-end coverage for WebVTT subtitle download and MP4 embedding
+- Dependabot configuration for Go modules and GitHub Actions
+- Dependency-only vulnerability checks with govulncheck
+
 ## 2026.11.24.1
 
 ### Added
@@ -48,4 +66,4 @@ All notable changes are documented here. Versions use numeric dotted identifiers
 
 - Current engine resources target Spotify 1.3.8.620 and Linux x86-64.
 - Video requires a user-supplied Widevine L3 WVD file.
-- Nonempty subtitle retrieval has not been verified because the real test track provided no subtitle languages.
+- WebVTT download and embedding are covered by a local end-to-end test; the tested Spotify tracks did not expose subtitle language codes.
